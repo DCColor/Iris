@@ -8,7 +8,10 @@ struct ContentView: View {
     @State private var isScrubbing = false
     @State private var scrubValue: Double = 0
 
+    // hudVisible: are the controls shown right now.
+    // pinned: Tab is holding them up (no auto-hide).
     @State private var hudVisible = true
+    @State private var pinned = false
     @State private var idleTask: Task<Void, Never>?
 
     var body: some View {
@@ -25,8 +28,14 @@ struct ContentView: View {
             .opacity(hudVisible ? 1 : 0)
             .animation(.easeInOut(duration: 0.30), value: hudVisible)
 
-            // Drives both the window styling and the traffic-light fade.
-            WindowConfigurator(buttonsVisible: hudVisible, displaySize: engine.displaySize).frame(width: 0, height: 0)
+            WindowConfigurator(buttonsVisible: hudVisible, displaySize: engine.displaySize)
+                .frame(width: 0, height: 0)
+
+            // Hidden button captures Tab to pin/dismiss the controls.
+            Button("") { togglePin() }
+                .keyboardShortcut(.tab, modifiers: [])
+                .frame(width: 0, height: 0)
+                .opacity(0)
         }
         .onContinuousHover { phase in
             if case .active = phase { wakeHUD() }
@@ -44,7 +53,7 @@ struct ContentView: View {
     }
 
     private var transportHUD: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
             HStack(spacing: 12) {
                 Text(timeString(isScrubbing ? scrubValue : engine.currentTime))
                     .font(.system(.caption, design: .monospaced))
@@ -79,8 +88,9 @@ struct ContentView: View {
                 Button {
                     isImporterPresented = true
                 } label: {
-                    Label("Open…", systemImage: "folder")
+                    Image(systemName: "folder")
                 }
+                .help("Open…")
 
                 Button {
                     engine.togglePlayPause()
@@ -90,24 +100,55 @@ struct ContentView: View {
                 }
                 .keyboardShortcut(.space, modifiers: [])
 
+                Divider().frame(height: 16).overlay(.white.opacity(0.25))
+
+                // Cockpit placeholders — enabled as features land.
+                Button { } label: { Image(systemName: "speaker.wave.2.fill") }
+                    .help("Volume (coming soon)").disabled(true)
+                Button { } label: { Image(systemName: "repeat") }
+                    .help("Loop (coming soon)").disabled(true)
+                Button { } label: { Image(systemName: "grid") }
+                    .help("Guides (coming soon)").disabled(true)
+                Button { } label: { Image(systemName: "textformat") }
+                    .help("Overlay data (coming soon)").disabled(true)
+
                 Spacer()
+
+                // Pin toggle — same action as Tab, with a visible state.
+                Button {
+                    togglePin()
+                } label: {
+                    Image(systemName: pinned ? "pin.fill" : "pin")
+                }
+                .help(pinned ? "Unpin controls (Tab)" : "Pin controls (Tab)")
             }
+            .buttonStyle(.plain)
+            .foregroundStyle(.white.opacity(0.9))
+            .imageScale(.large)
         }
         .padding(12)
         .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 12))
-        .frame(maxWidth: 640)
+        .frame(maxWidth: 760)
     }
 
+    // Tab / pin button: pin holds the controls up; tapping again dismisses to pure video.
+    private func togglePin() {
+        pinned.toggle()
+        idleTask?.cancel()
+        hudVisible = pinned   // pin -> show & hold; unpin -> dismiss
+    }
+
+    // Mouse movement: show controls; if not pinned, start the fade countdown.
     private func wakeHUD() {
         hudVisible = true
-        scheduleIdle()
+        if !pinned { scheduleIdle() }
     }
 
     private func scheduleIdle() {
         idleTask?.cancel()
         idleTask = Task {
             try? await Task.sleep(for: .seconds(2.0))
-            if !Task.isCancelled && !isScrubbing {
+            if !Task.isCancelled && !isScrubbing && !pinned {
                 hudVisible = false
             }
         }
