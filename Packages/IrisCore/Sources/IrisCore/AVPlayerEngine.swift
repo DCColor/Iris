@@ -1,8 +1,8 @@
 import AVFoundation
 import Combine
 
-/// Step-2 playback engine: AVPlayer plus accurate transport state and the
-/// loaded clip's display size (for sizing the window to the video).
+/// Step-2 playback engine: AVPlayer plus accurate transport state, the loaded
+/// clip's display size, and whether any media is loaded (for the empty state).
 @MainActor
 public final class AVPlayerEngine: ObservableObject {
 
@@ -11,10 +11,10 @@ public final class AVPlayerEngine: ObservableObject {
     @Published public private(set) var isPlaying = false
     @Published public private(set) var currentTime: Double = 0
     @Published public private(set) var duration: Double = 0
-
-    /// The clip's correct *display* size in points (accounts for non-square
-    /// pixels / anamorphic). nil until a clip is loaded and resolved.
     @Published public private(set) var displaySize: CGSize?
+
+    /// True once a clip has been loaded. Drives the empty state.
+    @Published public private(set) var hasMedia = false
 
     private var timeObserverToken: Any?
     private var cancellables = Set<AnyCancellable>()
@@ -57,19 +57,16 @@ public final class AVPlayerEngine: ObservableObject {
         currentTime = 0
         duration = 0
         displaySize = nil
+        hasMedia = true
         resolveDisplaySize(for: asset)
     }
 
-    /// Load the first video track's size + preferred transform off the main
-    /// thread, compute the true display rect, then publish it on the main thread.
     private func resolveDisplaySize(for asset: AVURLAsset) {
         Task {
             guard let track = try? await asset.loadTracks(withMediaType: .video).first,
                   let naturalSize = try? await track.load(.naturalSize),
                   let transform = try? await track.load(.preferredTransform)
             else { return }
-            // Applying the track's transform yields the correct display shape,
-            // including rotation and anamorphic pixel-aspect correction.
             let displayRect = CGRect(origin: .zero, size: naturalSize).applying(transform)
             let size = CGSize(width: abs(displayRect.width), height: abs(displayRect.height))
             await MainActor.run {

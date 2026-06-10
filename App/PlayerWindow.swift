@@ -1,20 +1,35 @@
 import SwiftUI
 import AppKit
 
-/// Full-bleed NSWindow tweaks paired with .windowStyle(.hiddenTitleBar):
-/// black background, draggable by video, traffic-light buttons that fade with
-/// the HUD, and — when a clip's `displaySize` is known — locks the window's
-/// aspect ratio to the video and sizes it sensibly to the screen.
+/// Full-bleed NSWindow tweaks paired with .windowStyle(.hiddenTitleBar).
+/// On cold launch with no clip, opens at a neutral default 16:9 (overriding any
+/// restored frame). Once a clip's `displaySize` is known, locks the window to the
+/// clip's aspect and sizes it to the screen. Traffic-light buttons fade with the HUD.
 struct WindowConfigurator: NSViewRepresentable {
     var buttonsVisible: Bool
     var displaySize: CGSize?
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
+        let hasClip = (displaySize != nil)
         DispatchQueue.main.async {
             guard let window = view.window else { return }
             window.isMovableByWindowBackground = true
             window.backgroundColor = .black
+
+            // No clip yet → neutral default 16:9, no aspect lock, centered.
+            if !hasClip {
+                window.contentAspectRatio = .zero
+                let defaultSize: NSSize
+                if let screen = window.screen ?? NSScreen.main {
+                    let w = min(screen.visibleFrame.width * 0.6, 1280)
+                    defaultSize = NSSize(width: w, height: (w * 9.0 / 16.0).rounded())
+                } else {
+                    defaultSize = NSSize(width: 960, height: 540)
+                }
+                window.setContentSize(defaultSize)
+                window.center()
+            }
         }
         return view
     }
@@ -22,7 +37,6 @@ struct WindowConfigurator: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {
         guard let window = nsView.window else { return }
 
-        // Fade the traffic-light buttons with the HUD.
         let buttons: [NSButton?] = [
             window.standardWindowButton(.closeButton),
             window.standardWindowButton(.miniaturizeButton),
@@ -34,16 +48,10 @@ struct WindowConfigurator: NSViewRepresentable {
             for button in buttons { button?.animator().alphaValue = target }
         }
 
-        // When we know the clip's display size, match the window to it.
         guard let size = displaySize, size.width > 0, size.height > 0 else { return }
         let aspect = NSSize(width: size.width, height: size.height)
-
-        // Only resize when the aspect actually changed, so the user's manual
-        // resizing isn't fought on every state update.
         if window.contentAspectRatio != aspect {
             window.contentAspectRatio = aspect
-
-            // Initial size: fit within ~80% of the visible screen, preserving aspect.
             if let screen = window.screen ?? NSScreen.main {
                 let maxW = screen.visibleFrame.width * 0.8
                 let maxH = screen.visibleFrame.height * 0.8

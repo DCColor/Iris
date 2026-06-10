@@ -8,8 +8,6 @@ struct ContentView: View {
     @State private var isScrubbing = false
     @State private var scrubValue: Double = 0
 
-    // hudVisible: are the controls shown right now.
-    // pinned: Tab is holding them up (no auto-hide).
     @State private var hudVisible = true
     @State private var pinned = false
     @State private var idleTask: Task<Void, Never>?
@@ -20,18 +18,24 @@ struct ContentView: View {
                 .background(.black)
                 .ignoresSafeArea()
 
-            VStack {
-                Spacer()
-                transportHUD
-                    .padding(16)
+            if engine.hasMedia {
+                VStack {
+                    Spacer()
+                    transportHUD
+                        .padding(16)
+                }
+                .opacity(hudVisible ? 1 : 0)
+                .animation(.easeInOut(duration: 0.30), value: hudVisible)
+            } else {
+                emptyState
             }
-            .opacity(hudVisible ? 1 : 0)
-            .animation(.easeInOut(duration: 0.30), value: hudVisible)
 
-            WindowConfigurator(buttonsVisible: hudVisible, displaySize: engine.displaySize)
-                .frame(width: 0, height: 0)
+            WindowConfigurator(
+                buttonsVisible: engine.hasMedia ? hudVisible : true,
+                displaySize: engine.displaySize
+            )
+            .frame(width: 0, height: 0)
 
-            // Hidden button captures Tab to pin/dismiss the controls.
             Button("") { togglePin() }
                 .keyboardShortcut(.tab, modifiers: [])
                 .frame(width: 0, height: 0)
@@ -40,7 +44,7 @@ struct ContentView: View {
         .onContinuousHover { phase in
             if case .active = phase { wakeHUD() }
         }
-        .onAppear { scheduleIdle() }
+        .onAppear { if engine.hasMedia { scheduleIdle() } }
         .fileImporter(
             isPresented: $isImporterPresented,
             allowedContentTypes: [.movie, .video, .quickTimeMovie, .mpeg4Movie],
@@ -48,7 +52,26 @@ struct ContentView: View {
         ) { result in
             if case .success(let urls) = result, let url = urls.first {
                 engine.load(url: url)
+                wakeHUD()
             }
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "film")
+                .font(.system(size: 52, weight: .ultraLight))
+                .foregroundStyle(.white.opacity(0.45))
+            Text("Open a file to begin")
+                .font(.title3)
+                .foregroundStyle(.white.opacity(0.65))
+            Button {
+                isImporterPresented = true
+            } label: {
+                Label("Open…", systemImage: "folder")
+            }
+            .controlSize(.large)
+            .tint(.white)
         }
     }
 
@@ -102,7 +125,6 @@ struct ContentView: View {
 
                 Divider().frame(height: 16).overlay(.white.opacity(0.25))
 
-                // Cockpit placeholders — enabled as features land.
                 Button { } label: { Image(systemName: "speaker.wave.2.fill") }
                     .help("Volume (coming soon)").disabled(true)
                 Button { } label: { Image(systemName: "repeat") }
@@ -114,7 +136,6 @@ struct ContentView: View {
 
                 Spacer()
 
-                // Pin toggle — same action as Tab, with a visible state.
                 Button {
                     togglePin()
                 } label: {
@@ -131,15 +152,15 @@ struct ContentView: View {
         .frame(maxWidth: 760)
     }
 
-    // Tab / pin button: pin holds the controls up; tapping again dismisses to pure video.
     private func togglePin() {
+        guard engine.hasMedia else { return }
         pinned.toggle()
         idleTask?.cancel()
-        hudVisible = pinned   // pin -> show & hold; unpin -> dismiss
+        hudVisible = pinned
     }
 
-    // Mouse movement: show controls; if not pinned, start the fade countdown.
     private func wakeHUD() {
+        guard engine.hasMedia else { return }
         hudVisible = true
         if !pinned { scheduleIdle() }
     }
