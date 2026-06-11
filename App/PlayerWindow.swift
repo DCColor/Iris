@@ -1,13 +1,12 @@
 import SwiftUI
 import AppKit
 
-/// Full-bleed NSWindow tweaks. Overlay mode locks the window to the clip's pure
-/// aspect. Docked mode locks the window to "clip aspect + bar height".
+/// Full-bleed NSWindow locked to the clip's aspect for BOTH modes (overlay and
+/// docked are now both overlays over the video, so the window is always just the
+/// video — it scales as one piece). Traffic-light buttons fade with the controls.
 struct WindowConfigurator: NSViewRepresentable {
     var buttonsVisible: Bool
     var displaySize: CGSize?
-    var mode: ControlDisplayMode
-    var barHeight: CGFloat
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
@@ -47,20 +46,14 @@ struct WindowConfigurator: NSViewRepresentable {
         }
 
         guard let size = displaySize, size.width > 0, size.height > 0 else { return }
-
-        let extraH = (mode == .docked) ? barHeight : 0
-        let targetAspect = NSSize(width: size.width, height: size.height + extraH)
-
-        if window.contentAspectRatio != targetAspect {
-            window.contentAspectRatio = targetAspect
+        let aspect = NSSize(width: size.width, height: size.height)
+        if window.contentAspectRatio != aspect {
+            window.contentAspectRatio = aspect
             if let screen = window.screen ?? NSScreen.main {
                 let maxW = screen.visibleFrame.width * 0.8
                 let maxH = screen.visibleFrame.height * 0.8
-                let scale = min(maxW / size.width, (maxH - extraH) / size.height, 1.0)
-                let contentSize = NSSize(
-                    width: size.width * scale,
-                    height: size.height * scale + extraH
-                )
+                let scale = min(maxW / size.width, maxH / size.height, 1.0)
+                let contentSize = NSSize(width: size.width * scale, height: size.height * scale)
                 window.setContentSize(contentSize)
                 window.center()
             }

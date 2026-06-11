@@ -6,6 +6,7 @@ struct ContentView: View {
 
     @AppStorage("controlDisplayMode") private var controlModeRaw: String = ControlDisplayMode.overlay.rawValue
     private var mode: ControlDisplayMode { ControlDisplayMode(rawValue: controlModeRaw) ?? .overlay }
+    private var isDocked: Bool { mode == .docked }
 
     @State private var isImporterPresented = false
     @State private var isScrubbing = false
@@ -15,30 +16,49 @@ struct ContentView: View {
     @State private var pinned = false
     @State private var idleTask: Task<Void, Never>?
 
-    static let dockedBarHeight: CGFloat = 64
+    // In docked mode the controls are always shown; in overlay they auto-hide.
+    private var controlsShown: Bool { isDocked ? true : hudVisible }
 
     var body: some View {
-        Group {
-            if mode == .docked {
-                dockedLayout
+        ZStack {
+            VideoSurfaceView(player: engine.player)
+                .background(.black)
+                .ignoresSafeArea()
+
+            if engine.hasMedia {
+                VStack {
+                    Spacer()
+                    controls(showPin: !isDocked)
+                        .padding(isDocked ? 14 : 12)
+                        .background(
+                            isDocked
+                                ? AnyShapeStyle(.black.opacity(0.85))
+                                : AnyShapeStyle(.black.opacity(0.55)),
+                            in: RoundedRectangle(cornerRadius: isDocked ? 0 : 12)
+                        )
+                        .frame(maxWidth: isDocked ? .infinity : 760)
+                        .padding(isDocked ? 0 : 16)
+                }
+                .opacity(controlsShown ? 1 : 0)
+                .animation(.easeInOut(duration: 0.30), value: controlsShown)
             } else {
-                overlayLayout
+                emptyState
             }
-        }
-        .background(
+
             WindowConfigurator(
-                buttonsVisible: engine.hasMedia ? (mode == .docked ? true : hudVisible) : true,
-                displaySize: engine.displaySize,
-                mode: mode,
-                barHeight: Self.dockedBarHeight
+                buttonsVisible: engine.hasMedia ? controlsShown : true,
+                displaySize: engine.displaySize
             )
             .frame(width: 0, height: 0)
-        )
-        .background(
+
             Button("") { togglePin() }
                 .keyboardShortcut(.tab, modifiers: [])
                 .opacity(0)
-        )
+        }
+        .onContinuousHover { phase in
+            if case .active = phase { wakeHUD() }
+        }
+        .onAppear { if engine.hasMedia && !isDocked { scheduleIdle() } }
         .fileImporter(
             isPresented: $isImporterPresented,
             allowedContentTypes: [.movie, .video, .quickTimeMovie, .mpeg4Movie],
@@ -49,53 +69,6 @@ struct ContentView: View {
                 wakeHUD()
             }
         }
-    }
-
-    private var overlayLayout: some View {
-        ZStack {
-            VideoSurfaceView(player: engine.player)
-                .background(.black)
-                .ignoresSafeArea()
-
-            if engine.hasMedia {
-                VStack {
-                    Spacer()
-                    controls(showPin: true)
-                        .padding(12)
-                        .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 12))
-                        .frame(maxWidth: 760)
-                        .padding(16)
-                }
-                .opacity(hudVisible ? 1 : 0)
-                .animation(.easeInOut(duration: 0.30), value: hudVisible)
-            } else {
-                emptyState
-            }
-        }
-        .onContinuousHover { phase in
-            if case .active = phase { wakeHUD() }
-        }
-        .onAppear { if engine.hasMedia { scheduleIdle() } }
-    }
-
-    private var dockedLayout: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                VideoSurfaceView(player: engine.player)
-                    .background(.black)
-                if !engine.hasMedia { emptyState }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            if engine.hasMedia {
-                controls(showPin: false)
-                    .padding(.horizontal, 16)
-                    .frame(height: Self.dockedBarHeight)
-                    .frame(maxWidth: .infinity)
-                    .background(.black)
-            }
-        }
-        .ignoresSafeArea()
     }
 
     private func controls(showPin: Bool) -> some View {
@@ -182,14 +155,14 @@ struct ContentView: View {
     }
 
     private func togglePin() {
-        guard engine.hasMedia, mode == .overlay else { return }
+        guard engine.hasMedia, !isDocked else { return }
         pinned.toggle()
         idleTask?.cancel()
         hudVisible = pinned
     }
 
     private func wakeHUD() {
-        guard engine.hasMedia, mode == .overlay else { return }
+        guard engine.hasMedia, !isDocked else { return }
         hudVisible = true
         if !pinned { scheduleIdle() }
     }
