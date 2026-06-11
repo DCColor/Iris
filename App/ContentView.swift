@@ -2,7 +2,7 @@ import SwiftUI
 import IrisCore
 
 struct ContentView: View {
-    @StateObject private var engine = AVPlayerEngine()
+    @ObservedObject var engine: AVPlayerEngine
     @State private var isImporterPresented = false
 
     @State private var isScrubbing = false

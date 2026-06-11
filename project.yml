@@ -17,6 +17,18 @@ targets:
       - App
     dependencies:
       - package: IrisCore
+    info:
+      path: App/Info.generated.plist
+      properties:
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Movie
+            LSItemContentTypes:
+              - public.movie
+              - public.video
+              - com.apple.quicktime-movie
+              - public.mpeg-4
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.graviton.iris
