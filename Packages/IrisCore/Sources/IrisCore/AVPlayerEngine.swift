@@ -27,9 +27,11 @@ public final class AVPlayerEngine: ObservableObject {
         let interval = CMTime(seconds: 0.25, preferredTimescale: 600)
         timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             guard let self else { return }
-            self.currentTime = time.seconds
-            if let dur = self.player.currentItem?.duration.seconds, dur.isFinite {
-                self.duration = dur
+            let seconds = time.seconds
+            let dur = self.player.currentItem?.duration.seconds
+            Task { @MainActor in
+                self.currentTime = seconds
+                if let dur, dur.isFinite { self.duration = dur }
             }
         }
 
@@ -98,9 +100,19 @@ public final class AVPlayerEngine: ObservableObject {
                 }
             }
 
+            meta.startTimecode = TimecodeReader.readStartTimecode(url: url)?.timecode
+            meta.chapters = await Self.chapters(for: asset)
+
             let resolved = meta
             await MainActor.run {
                 self.metadata = resolved
+                print("""
+                ── Iris TC/chapters ───────────
+                timecode:  \(resolved.startTimecode ?? "(none)")
+                chapters:  \(resolved.chapters.count)
+                \(resolved.chapters.map { "  • \(String(format: "%.2f", $0.time))s  \($0.title)" }.joined(separator: "\n"))
+                ───────────────────────────────
+                """)
             }
         }
     }
@@ -184,6 +196,27 @@ public final class AVPlayerEngine: ObservableObject {
         return (name(prim), code(prim),
                 name(trans), code(trans),
                 name(matrix), code(matrix))
+    }
+
+    /// Read chapter markers (title + start time) from the asset, if any.
+    private static func chapters(for asset: AVURLAsset) async -> [ChapterMarker] {
+        let locales = (try? await asset.load(.availableChapterLocales)) ?? []
+        let locale = locales.first ?? Locale.current
+        guard let groups = try? await asset.loadChapterMetadataGroups(
+            withTitleLocale: locale, containingItemsWithCommonKeys: []
+        ) else { return [] }
+
+        var result: [ChapterMarker] = []
+        for group in groups {
+            let time = group.timeRange.start.seconds
+            var title = "Chapter"
+            if let titleItem = group.items.first(where: { $0.commonKey == .commonKeyTitle }),
+               let value = (try? await titleItem.load(.stringValue)) ?? nil {
+                title = value
+            }
+            result.append(ChapterMarker(time: time.isFinite ? time : 0, title: title))
+        }
+        return result
     }
 
     private static func fourCC(_ s: String) -> FourCharCode {
